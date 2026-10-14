@@ -320,11 +320,11 @@
     );
 
     if (slot) {
-      btn.innerHTML =
-        '<span class="slot__ring">' +
-        renderAvatarSVG(getAvatar(slot.avatarId), 'slot-' + team + '-' + def.key) +
-        '</span>' +
-        '<span class="slot__label">' + escapeHtml(slot.name) + '</span>';
+        btn.innerHTML =
+          '<span class="slot__ring">' +
+          renderAvatarSVG(getAvatar(slot.avatarId), 'slot-' + team + '-' + def.key, { variant: team }) +
+          '</span>' +
+          '<span class="slot__label">' + escapeHtml(slot.name) + '</span>';
     } else {
       btn.innerHTML =
         '<span class="slot__ring"><span class="slot__plus">+</span></span>' +
@@ -366,7 +366,7 @@
         if (slot) {
           b.innerHTML =
             '<span class="bench-slot__ring">' +
-            renderAvatarSVG(getAvatar(slot.avatarId), 'bench-' + team + '-' + def.key) +
+            renderAvatarSVG(getAvatar(slot.avatarId), 'bench-' + team + '-' + def.key, { variant: team }) +
             '</span>' +
             '<span class="bench-slot__name">' + escapeHtml(slot.name) + '</span>';
         } else {
@@ -564,7 +564,7 @@
     const card = document.createElement('div');
     card.className = 'slot-player t-' + team;
     card.innerHTML =
-      renderAvatarSVG(getAvatar(slot.avatarId), 'sheet-' + team + '-' + key) +
+      renderAvatarSVG(getAvatar(slot.avatarId), 'sheet-' + team + '-' + key, { variant: team }) +
       '<div class="slot-player__info">' +
       '<span class="slot-player__name">' + escapeHtml(slot.name) + '</span>' +
       '<span class="slot-player__meta">' +

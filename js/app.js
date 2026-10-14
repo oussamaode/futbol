@@ -1,12 +1,12 @@
 /* ============================================================
-   SquadUp — app shell & personal identity
+   SquadUp Ã¢â‚¬â€ app shell & personal identity
    Each device stores ONLY its own Player ID (+ display fields)
    in localStorage. The match lineup itself lives in Firebase.
    ============================================================ */
 
 const PLAYER_KEY = 'squadup.player';
 
-/* Legacy keys from earlier versions — cleared on boot. */
+/* Legacy keys from earlier versions Ã¢â‚¬â€ cleared on boot. */
 const LEGACY_KEYS = ['squadup.users', 'squadup.activeUser', 'squadup.lineup'];
 
 let player = null; // { id, name, avatarId, createdAt }
@@ -127,7 +127,7 @@ function renderAvatarGrid() {
     btn.setAttribute('aria-label', avatar.label);
     btn.setAttribute('aria-checked', String(avatar.id === draft.avatarId));
     btn.classList.toggle('is-selected', avatar.id === draft.avatarId);
-    btn.innerHTML = renderAvatarSVG(avatar, 'grid-' + avatar.id);
+    btn.innerHTML = renderAvatarSVG(avatar, 'grid-' + avatar.id, { variant: 'neutral' });
     btn.addEventListener('click', () => selectAvatar(avatar.id));
     el.avatarGrid.appendChild(btn);
   });
@@ -145,14 +145,14 @@ function selectAvatar(id) {
 
 function renderPreview() {
   const avatar = getAvatar(draft.avatarId);
-  el.createPreview.innerHTML = renderAvatarSVG(avatar, 'preview');
+  el.createPreview.innerHTML = renderAvatarSVG(avatar, 'preview', { variant: 'neutral' });
   el.createPreviewName.textContent = avatar.label;
 }
 
 function renderHome() {
   if (!player) return;
   const avatar = getAvatar(player.avatarId);
-  el.homeAvatar.innerHTML = renderAvatarSVG(avatar, 'home');
+  el.homeAvatar.innerHTML = renderAvatarSVG(avatar, 'home', { variant: 'neutral' });
   el.homeName.textContent = player.name;
   el.homeSince.textContent = `Playing since ${formatDate(player.createdAt)}`;
   if (window.Lineup) window.Lineup.render();
@@ -236,3 +236,4 @@ function init() {
 }
 
 init();
+

@@ -81,24 +81,24 @@ const AVATARS = [
  * @param {object} avatar - entry from AVATARS
  * @param {string} key - unique suffix so multiple copies keep distinct gradient ids
  */
-function renderAvatarSVG(avatar, key) {
-  const g = `grad-${avatar.id}-${key}`;
-  const gloss = `gloss-${avatar.id}-${key}`;
+function renderAvatarSVG(avatar, key, opts) {
+  const options = opts || {};
+  const variant = options.variant || 'neutral';
+  const g = `grad-${avatar.id}-${key}-${variant}`;
+  const gloss = `gloss-${avatar.id}-${key}-${variant}`;
+  let bgFill = 'var(--avatar-bg-neutral, #1f2430)';
+  if (variant === 'blue') bgFill = 'var(--avatar-bg-blue, #3b7bff)';
+  else if (variant === 'orange') bgFill = 'var(--avatar-bg-orange, #ff6b1a)';
+  const iconFill = 'var(--avatar-icon, #ffffff)';
+  const defs = variant === 'neutral'
+    ? (`<defs><radialGradient id="${gloss}" cx="30%" cy="18%" r="85%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/><stop offset="55%" stop-color="#ffffff" stop-opacity="0"/></radialGradient></defs>`)
+    : (`<defs><linearGradient id="${g}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${avatar.from}"/><stop offset="1" stop-color="${avatar.to}"/></linearGradient><radialGradient id="${gloss}" cx="30%" cy="18%" r="85%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/><stop offset="55%" stop-color="#ffffff" stop-opacity="0"/></radialGradient></defs>`);
   return (
-    `<svg class="avatar-svg" viewBox="0 0 100 100" role="img" aria-label="${avatar.label} avatar" xmlns="http://www.w3.org/2000/svg">` +
-    `<defs>` +
-    `<linearGradient id="${g}" x1="0" y1="0" x2="1" y2="1">` +
-    `<stop offset="0" stop-color="${avatar.from}"/>` +
-    `<stop offset="1" stop-color="${avatar.to}"/>` +
-    `</linearGradient>` +
-    `<radialGradient id="${gloss}" cx="30%" cy="18%" r="85%">` +
-    `<stop offset="0" stop-color="#ffffff" stop-opacity="0.45"/>` +
-    `<stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>` +
-    `</radialGradient>` +
-    `</defs>` +
-    `<rect width="100" height="100" rx="30" fill="url(#${g})"/>` +
+    `<svg class="avatar-svg avatar-svg--${variant}" viewBox="0 0 100 100" role="img" aria-label="${avatar.label} avatar" xmlns="http://www.w3.org/2000/svg">` +
+    defs +
+    `<rect width="100" height="100" rx="30" fill="${bgFill}"/>` +
     `<rect width="100" height="100" rx="30" fill="url(#${gloss})"/>` +
-    `<g transform="translate(50 50) scale(0.6) translate(-50 -50)" fill="#ffffff">${avatar.icon}</g>` +
+    `<g transform="translate(50 50) scale(0.6) translate(-50 -50)" fill="${iconFill}">${avatar.icon}</g>` +
     `</svg>`
   );
 }
