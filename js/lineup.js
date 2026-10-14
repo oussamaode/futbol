@@ -34,7 +34,16 @@
     { key: 'sub2', label: 'SUB 2' }
   ];
 
-  const ALL_KEYS = FIELD_SLOTS.map((s) => s.key).concat(BENCH_SLOTS.map((s) => s.key));
+  const FIELD_KEYS = FIELD_SLOTS.map((s) => s.key);
+  const BENCH_KEYS = BENCH_SLOTS.map((s) => s.key);
+  const ALL_KEYS = FIELD_KEYS.concat(BENCH_KEYS);
+
+  const SLOT_LABELS = {};
+  FIELD_SLOTS.forEach((s) => { SLOT_LABELS[s.key] = s.label; });
+  BENCH_SLOTS.forEach((s) => { SLOT_LABELS[s.key] = 'Substitute'; });
+
+  const MAX_FIELD = FIELD_KEYS.length; // 9
+  const MAX_BENCH = BENCH_KEYS.length; // 2
 
   let lineup = { blue: {}, orange: {} };
   let current = null;       // slot currently open in the picker
@@ -43,6 +52,7 @@
   const dom = {
     pitchSlots: document.getElementById('pitch-slots'),
     bench: document.getElementById('bench'),
+    joinPanel: document.getElementById('join-panel'),
     sheet: document.getElementById('sheet'),
     sheetEyebrow: document.getElementById('sheet-eyebrow'),
     sheetTitle: document.getElementById('sheet-title'),
@@ -83,6 +93,11 @@
     return state.users.find((u) => u.id === id) || null;
   }
 
+  function isActiveUser(id) {
+    const active = typeof getActiveUser === 'function' ? getActiveUser() : null;
+    return !!(active && active.id === id);
+  }
+
   function placementOf(userId) {
     const teams = ['blue', 'orange'];
     for (let t = 0; t < teams.length; t++) {
@@ -94,6 +109,82 @@
       }
     }
     return null;
+  }
+
+  /* ---------- Team occupancy & rules ---------- */
+  function fieldCount(team) {
+    return FIELD_KEYS.reduce((n, k) => n + (lineup[team][k] ? 1 : 0), 0);
+  }
+
+  function benchCount(team) {
+    return BENCH_KEYS.reduce((n, k) => n + (lineup[team][k] ? 1 : 0), 0);
+  }
+
+  function isTeamFull(team) {
+    return fieldCount(team) === MAX_FIELD && benchCount(team) === MAX_BENCH;
+  }
+
+  /* First open field slot, otherwise the first open bench slot. */
+  function firstOpenSlot(team) {
+    for (let i = 0; i < FIELD_KEYS.length; i++) {
+      if (!lineup[team][FIELD_KEYS[i]]) return FIELD_KEYS[i];
+    }
+    for (let i = 0; i < BENCH_KEYS.length; i++) {
+      if (!lineup[team][BENCH_KEYS[i]]) return BENCH_KEYS[i];
+    }
+    return null;
+  }
+
+  function shortTeam(team) {
+    return TEAMS[team].name.replace(' Team', '');
+  }
+
+  /* Join flow: fills the field first, then the bench. Blocks if full. */
+  function joinTeam(team, userId) {
+    const user = getUser(userId);
+    if (!user) return false;
+
+    const existing = placementOf(userId);
+    if (existing && existing.team === team) {
+      toast('You already play for the ' + TEAMS[team].name + '.');
+      return false;
+    }
+
+    if (isTeamFull(team)) {
+      toast(TEAMS[team].name + ' is full! Try the other team.');
+      return false;
+    }
+
+    if (existing) delete lineup[existing.team][existing.key];
+
+    const key = firstOpenSlot(team);
+    if (!key) {
+      toast(TEAMS[team].name + ' is full! Try the other team.');
+      return false;
+    }
+
+    lineup[team][key] = userId;
+    saveLineup();
+    render();
+
+    if (BENCH_KEYS.indexOf(key) > -1) {
+      toast(user.name + ' joined the ' + shortTeam(team) + ' bench.');
+    } else {
+      toast(user.name + ' joined ' + TEAMS[team].name + ' as ' + SLOT_LABELS[key] + '!');
+    }
+    return true;
+  }
+
+  function leaveMatch(userId) {
+    const existing = placementOf(userId);
+    if (!existing) {
+      toast('You are not in this match yet.');
+      return;
+    }
+    delete lineup[existing.team][existing.key];
+    saveLineup();
+    render();
+    toast('You left the match.');
   }
 
   /* ---------- Mutations ---------- */
@@ -115,6 +206,95 @@
   function render() {
     renderPitch();
     renderBench();
+    renderJoinPanel();
+  }
+
+  /* ---------- Join panel ---------- */
+  function renderJoinPanel() {
+    if (!dom.joinPanel) return;
+    dom.joinPanel.innerHTML = '';
+
+    const user = typeof getActiveUser === 'function' ? getActiveUser() : null;
+    if (!user) return;
+
+    const placement = placementOf(user.id);
+
+    if (!placement) {
+      const cta = document.createElement('div');
+      cta.className = 'join-cta';
+      cta.innerHTML =
+        '<div class="join-cta__text">' +
+        '<strong>Ready to play?</strong>' +
+        '<span>Pick a team and take your spot on the pitch.</span>' +
+        '</div>';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn--primary';
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>' +
+        'Join the match';
+      btn.addEventListener('click', openTeamChoice);
+      cta.appendChild(btn);
+      dom.joinPanel.appendChild(cta);
+      return;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'join-status t-' + placement.team;
+    card.innerHTML =
+      '<span class="join-status__dot"></span>' +
+      '<div class="join-status__info">' +
+      '<strong>You are on ' + TEAMS[placement.team].name + '</strong>' +
+      '<span>Position: ' + SLOT_LABELS[placement.key] + '</span>' +
+      '</div>';
+
+    const leave = document.createElement('button');
+    leave.type = 'button';
+    leave.className = 'btn btn--danger join-status__btn';
+    leave.textContent = 'Leave';
+    leave.addEventListener('click', () => leaveMatch(user.id));
+    card.appendChild(leave);
+    dom.joinPanel.appendChild(card);
+  }
+
+  /* ---------- Team choice sheet ---------- */
+  function openTeamChoice() {
+    const user = typeof getActiveUser === 'function' ? getActiveUser() : null;
+    if (!user) return;
+
+    current = null;
+    dom.sheetEyebrow.textContent = 'Join match';
+    dom.sheetTitle.textContent = 'Choose your team';
+    dom.sheetBody.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'team-choice';
+
+    ['blue', 'orange'].forEach((team) => {
+      const full = isTeamFull(team);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'team-choice__btn t-' + team + (full ? ' is-full' : '');
+      b.setAttribute('aria-disabled', String(full));
+      b.innerHTML =
+        '<span class="team-choice__name">' + TEAMS[team].name + '</span>' +
+        '<span class="team-choice__meta">' +
+        fieldCount(team) + '/' + MAX_FIELD + ' on field · ' +
+        benchCount(team) + '/' + MAX_BENCH + ' subs' +
+        '</span>' +
+        '<span class="team-choice__badge">' + (full ? 'Team is full' : 'Join') + '</span>';
+
+      b.addEventListener('click', () => {
+        const ok = joinTeam(team, user.id);
+        if (ok) closeSheet();
+      });
+      wrap.appendChild(b);
+    });
+
+    dom.sheetBody.appendChild(wrap);
+    dom.sheetFoot.innerHTML = '';
+    dom.sheet.classList.add('is-open');
   }
 
   function renderPitch() {
@@ -134,7 +314,10 @@
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'slot t-' + team + (user ? ' slot--filled' : ' slot--empty');
+    btn.className =
+      'slot t-' + team +
+      (user ? ' slot--filled' : ' slot--empty') +
+      (user && isActiveUser(user.id) ? ' slot--you' : '');
     btn.style.left = def.x + '%';
     btn.style.top = y + '%';
     btn.setAttribute(
@@ -179,7 +362,9 @@
         const b = document.createElement('button');
         b.type = 'button';
         b.className =
-          'bench-slot t-' + team + (user ? ' bench-slot--filled' : ' bench-slot--empty');
+          'bench-slot t-' + team +
+          (user ? ' bench-slot--filled' : ' bench-slot--empty') +
+          (user && isActiveUser(user.id) ? ' bench-slot--you' : '');
         b.setAttribute(
           'aria-label',
           TEAMS[team].name + ' ' + def.label + (user ? ': ' + user.name : ' (empty)')
@@ -215,6 +400,24 @@
     renderPickerBody(user);
 
     dom.sheetFoot.innerHTML = '';
+
+    const active = typeof getActiveUser === 'function' ? getActiveUser() : null;
+    const isActiveHere = active && user && user.id === active.id;
+    if (active && !isActiveHere) {
+      const join = document.createElement('button');
+      join.type = 'button';
+      join.className = 'btn btn--primary';
+      join.innerHTML =
+        '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>' +
+        'Join as ' + escapeHtml(active.name);
+      join.addEventListener('click', () => {
+        assign(team, key, active.id);
+        closeSheet();
+        toast('You joined ' + TEAMS[team].name + ' as ' + SLOT_LABELS[key] + '!');
+      });
+      dom.sheetFoot.appendChild(join);
+    }
+
     if (user) {
       const remove = document.createElement('button');
       remove.type = 'button';
