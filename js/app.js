@@ -186,6 +186,7 @@ function renderHome() {
   el.homeAvatar.innerHTML = renderAvatarSVG(avatar, 'home');
   el.homeName.textContent = user.name;
   el.homeSince.textContent = `Playing since ${formatDate(user.createdAt)}`;
+  if (window.Lineup) window.Lineup.render();
 }
 
 function escapeHtml(str) {
@@ -247,6 +248,7 @@ function createProfile() {
   state.users.push(user);
   saveUsers();
   saveActiveUser(user.id);
+  if (window.Lineup) window.Lineup.handleNewPlayer(user.id);
   renderHome();
   showScreen('home');
   toast(`Profile created for ${user.name}!`);
@@ -276,6 +278,7 @@ el.homeSwitch.addEventListener('click', openSelect);
 el.homeSignout.addEventListener('click', signOut);
 
 el.createBack.addEventListener('click', () => {
+  if (window.Lineup) window.Lineup.cancelPending();
   showScreen(getActiveUser() ? 'home' : 'select');
 });
 el.selectBack.addEventListener('click', () => {
