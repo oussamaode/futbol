@@ -1,58 +1,68 @@
 /* ============================================================
-   SquadUp — Match lineup & pitch (Phase 2)
-   Renders a responsive 9 v 9 pitch (+2 subs per side) and lets
-   players be assigned to any slot from the created profiles.
-   Lineup state persists in localStorage.
+   SquadUp — Live match lineup (Firebase Realtime Database)
+   ------------------------------------------------------------
+   • Live sync of "matchLineup" via onValue for every device.
+   • Anti-overwrite: latest DB read + atomic transaction per slot.
+   • Ownership: a player can only vacate/move their OWN slot.
+   • Share Lineup: builds a WhatsApp-ready markdown summary.
    ============================================================ */
 
 (function () {
   'use strict';
 
-  const LINEUP_KEY = 'squadup.lineup';
+  const FIREBASE = window.FIREBASE || null;
+  const db = FIREBASE && FIREBASE.db ? FIREBASE.db : null;
+  const PATH = FIREBASE ? FIREBASE.LINEUP_PATH : 'matchLineup';
+  const APP_URL = FIREBASE ? FIREBASE.APP_URL : '';
 
   const TEAMS = {
-    blue: { id: 'blue', name: 'Blue Team' },
-    orange: { id: 'orange', name: 'Orange Team' }
+    blue: { id: 'blue', name: 'Blue Team', emoji: '🔵' },
+    orange: { id: 'orange', name: 'Orange Team', emoji: '🟠' }
   };
 
-  /* 1-3-3-2 formation, coordinates are percentages of the pitch
-     for the team defending the bottom half. Orange is mirrored. */
+  /* 1-3-3-2 formation. Coordinates are % of the pitch for the team
+     defending the bottom half; Orange is mirrored vertically. */
   const FIELD_SLOTS = [
-    { key: 'gk', label: 'GK', x: 50, y: 90 },
-    { key: 'lb', label: 'LB', x: 22, y: 77 },
-    { key: 'cb', label: 'CB', x: 50, y: 77 },
-    { key: 'rb', label: 'RB', x: 78, y: 77 },
-    { key: 'lm', label: 'LM', x: 24, y: 62 },
-    { key: 'cm', label: 'CM', x: 50, y: 62 },
-    { key: 'rm', label: 'RM', x: 76, y: 62 },
-    { key: 'ls', label: 'ST', x: 38, y: 42 },
-    { key: 'rs', label: 'ST', x: 62, y: 42 }
+    { key: 'gk', label: 'GK', name: 'Goalkeeper', x: 50, y: 90 },
+    { key: 'lb', label: 'LB', name: 'Left Back', x: 22, y: 77 },
+    { key: 'cb', label: 'CB', name: 'Centre Back', x: 50, y: 77 },
+    { key: 'rb', label: 'RB', name: 'Right Back', x: 78, y: 77 },
+    { key: 'lm', label: 'LM', name: 'Left Midfielder', x: 24, y: 62 },
+    { key: 'cm', label: 'CM', name: 'Centre Midfielder', x: 50, y: 62 },
+    { key: 'rm', label: 'RM', name: 'Right Midfielder', x: 76, y: 62 },
+    { key: 'ls', label: 'ST', name: 'Striker', x: 38, y: 42 },
+    { key: 'rs', label: 'ST', name: 'Striker', x: 62, y: 42 }
   ];
 
   const BENCH_SLOTS = [
-    { key: 'sub1', label: 'SUB 1' },
-    { key: 'sub2', label: 'SUB 2' }
+    { key: 'sub1', label: 'SUB 1', name: 'Substitute' },
+    { key: 'sub2', label: 'SUB 2', name: 'Substitute' }
   ];
 
   const FIELD_KEYS = FIELD_SLOTS.map((s) => s.key);
   const BENCH_KEYS = BENCH_SLOTS.map((s) => s.key);
   const ALL_KEYS = FIELD_KEYS.concat(BENCH_KEYS);
-
-  const SLOT_LABELS = {};
-  FIELD_SLOTS.forEach((s) => { SLOT_LABELS[s.key] = s.label; });
-  BENCH_SLOTS.forEach((s) => { SLOT_LABELS[s.key] = 'Substitute'; });
-
   const MAX_FIELD = FIELD_KEYS.length; // 9
   const MAX_BENCH = BENCH_KEYS.length; // 2
+  const MAX_TOTAL = MAX_FIELD + MAX_BENCH; // 11
 
-  let lineup = { blue: {}, orange: {} };
-  let current = null;       // slot currently open in the picker
-  let pendingAssign = null; // slot waiting for a brand-new player
+  const LABELS = {};
+  const NAMES = {};
+  FIELD_SLOTS.forEach((s) => { LABELS[s.key] = s.label; NAMES[s.key] = s.name; });
+  BENCH_SLOTS.forEach((s) => { LABELS[s.key] = s.label; NAMES[s.key] = s.name; });
+
+  let lineupData = { blue: {}, orange: {} };
+  let connected = false;
+  let sheetMode = null; // 'slot' | 'team' | null
+  let currentSlot = null;
 
   const dom = {
     pitchSlots: document.getElementById('pitch-slots'),
     bench: document.getElementById('bench'),
     joinPanel: document.getElementById('join-panel'),
+    shareBtn: document.getElementById('share-lineup'),
+    connPill: document.getElementById('conn-status'),
+    connText: document.getElementById('conn-text'),
     sheet: document.getElementById('sheet'),
     sheetEyebrow: document.getElementById('sheet-eyebrow'),
     sheetTitle: document.getElementById('sheet-title'),
@@ -61,163 +71,342 @@
     sheetClose: document.getElementById('sheet-close')
   };
 
-  /* ---------- Persistence ---------- */
-  function loadLineup() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(LINEUP_KEY));
-      if (raw && raw.blue && raw.orange) {
-        lineup = { blue: Object.assign({}, raw.blue), orange: Object.assign({}, raw.orange) };
-      }
-    } catch (err) {
-      lineup = { blue: {}, orange: {} };
-    }
-    pruneLineup();
+  /* ============================================================
+     Firebase helpers
+     ============================================================ */
+  function normalize(value) {
+    const v = value || {};
+    return {
+      blue: v.blue && typeof v.blue === 'object' ? v.blue : {},
+      orange: v.orange && typeof v.orange === 'object' ? v.orange : {}
+    };
   }
 
-  /* Drop references to players that no longer exist. */
-  function pruneLineup() {
-    ['blue', 'orange'].forEach((team) => {
-      ALL_KEYS.forEach((key) => {
-        const id = lineup[team][key];
-        if (id && !getUser(id)) delete lineup[team][key];
-      });
-    });
+  function readLatest() {
+    if (!db) return Promise.resolve(normalize(lineupData));
+    return db.ref(PATH).once('value').then((snap) => normalize(snap.val()));
   }
 
-  function saveLineup() {
-    localStorage.setItem(LINEUP_KEY, JSON.stringify(lineup));
+  function slotRef(team, key) {
+    return db.ref(PATH + '/' + team + '/' + key);
   }
 
-  /* ---------- Lookups ---------- */
-  function getUser(id) {
-    return state.users.find((u) => u.id === id) || null;
+  /* Atomic claim of a slot. Aborts if another player owns it. */
+  function tryOccupy(team, key, me) {
+    return slotRef(team, key)
+      .transaction((cur) => {
+        if (cur && cur.id && cur.id !== me.id) {
+          return; // abort — taken by someone else
+        }
+        return {
+          id: me.id,
+          name: me.name,
+          avatarId: me.avatarId,
+          joinedAt: Date.now()
+        };
+      })
+      .then((res) => !!(res && res.committed));
   }
 
-  function isActiveUser(id) {
-    const active = typeof getActiveUser === 'function' ? getActiveUser() : null;
-    return !!(active && active.id === id);
+  /* Atomic release — only removes the slot if it belongs to meId. */
+  function release(team, key, meId) {
+    return slotRef(team, key)
+      .transaction((cur) => {
+        if (cur && cur.id === meId) return null;
+        return; // abort — not mine
+      })
+      .then((res) => !!(res && res.committed));
   }
 
-  function placementOf(userId) {
+  /* ============================================================
+     Data queries
+     ============================================================ */
+  function findPlacement(data, playerId) {
     const teams = ['blue', 'orange'];
     for (let t = 0; t < teams.length; t++) {
       const team = teams[t];
       for (let k = 0; k < ALL_KEYS.length; k++) {
-        if (lineup[team][ALL_KEYS[k]] === userId) {
-          return { team: team, key: ALL_KEYS[k] };
+        const slot = data[team] && data[team][ALL_KEYS[k]];
+        if (slot && slot.id === playerId) {
+          return { team: team, key: ALL_KEYS[k], slot: slot };
         }
       }
     }
     return null;
   }
 
-  /* ---------- Team occupancy & rules ---------- */
-  function fieldCount(team) {
-    return FIELD_KEYS.reduce((n, k) => n + (lineup[team][k] ? 1 : 0), 0);
+  function fieldCount(data, team) {
+    return FIELD_KEYS.reduce((n, k) => n + (data[team] && data[team][k] ? 1 : 0), 0);
   }
 
-  function benchCount(team) {
-    return BENCH_KEYS.reduce((n, k) => n + (lineup[team][k] ? 1 : 0), 0);
+  function benchCount(data, team) {
+    return BENCH_KEYS.reduce((n, k) => n + (data[team] && data[team][k] ? 1 : 0), 0);
   }
 
-  function isTeamFull(team) {
-    return fieldCount(team) === MAX_FIELD && benchCount(team) === MAX_BENCH;
+  function isFull(data, team) {
+    return fieldCount(data, team) === MAX_FIELD && benchCount(data, team) === MAX_BENCH;
   }
 
-  /* First open field slot, otherwise the first open bench slot. */
-  function firstOpenSlot(team) {
+  function firstOpenSlot(data, team) {
     for (let i = 0; i < FIELD_KEYS.length; i++) {
-      if (!lineup[team][FIELD_KEYS[i]]) return FIELD_KEYS[i];
+      if (!(data[team] && data[team][FIELD_KEYS[i]])) return FIELD_KEYS[i];
     }
     for (let i = 0; i < BENCH_KEYS.length; i++) {
-      if (!lineup[team][BENCH_KEYS[i]]) return BENCH_KEYS[i];
+      if (!(data[team] && data[team][BENCH_KEYS[i]])) return BENCH_KEYS[i];
     }
     return null;
+  }
+
+  function isBenchKey(key) {
+    return BENCH_KEYS.indexOf(key) > -1;
   }
 
   function shortTeam(team) {
     return TEAMS[team].name.replace(' Team', '');
   }
 
-  /* Join flow: fills the field first, then the bench. Blocks if full. */
-  function joinTeam(team, userId) {
-    const user = getUser(userId);
-    if (!user) return false;
-
-    const existing = placementOf(userId);
-    if (existing && existing.team === team) {
-      toast('You already play for the ' + TEAMS[team].name + '.');
+  /* ============================================================
+     Actions
+     ============================================================ */
+  function ensureReady() {
+    if (!db) {
+      toast('You are offline. Reconnect to join the live match.');
       return false;
-    }
-
-    if (isTeamFull(team)) {
-      toast(TEAMS[team].name + ' is full! Try the other team.');
-      return false;
-    }
-
-    if (existing) delete lineup[existing.team][existing.key];
-
-    const key = firstOpenSlot(team);
-    if (!key) {
-      toast(TEAMS[team].name + ' is full! Try the other team.');
-      return false;
-    }
-
-    lineup[team][key] = userId;
-    saveLineup();
-    render();
-
-    if (BENCH_KEYS.indexOf(key) > -1) {
-      toast(user.name + ' joined the ' + shortTeam(team) + ' bench.');
-    } else {
-      toast(user.name + ' joined ' + TEAMS[team].name + ' as ' + SLOT_LABELS[key] + '!');
     }
     return true;
   }
 
-  function leaveMatch(userId) {
-    const existing = placementOf(userId);
-    if (!existing) {
-      toast('You are not in this match yet.');
-      return;
+  function me() {
+    return typeof getActivePlayer === 'function' ? getActivePlayer() : null;
+  }
+
+  function announceJoin(team, key, person) {
+    if (isBenchKey(key)) {
+      toast(person.name + ' joined the ' + shortTeam(team) + ' bench.');
+    } else {
+      toast(person.name + ' joined ' + TEAMS[team].name + ' as ' + LABELS[key] + '!');
     }
-    delete lineup[existing.team][existing.key];
-    saveLineup();
-    render();
-    toast('You left the match.');
   }
 
-  /* ---------- Mutations ---------- */
-  function assign(team, key, userId) {
-    const existing = placementOf(userId);
-    if (existing) delete lineup[existing.team][existing.key];
-    lineup[team][key] = userId;
-    saveLineup();
-    render();
+  function joinTeam(team, person) {
+    if (!ensureReady()) return Promise.resolve(false);
+    return readLatest().then((data) => {
+      const mine = findPlacement(data, person.id);
+      if (mine && mine.team === team) {
+        toast('You already play for the ' + TEAMS[team].name + '.');
+        return false;
+      }
+      if (isFull(data, team)) {
+        toast(TEAMS[team].name + ' is full! Try the other team.');
+        return false;
+      }
+      const key = firstOpenSlot(data, team);
+      if (!key) {
+        toast(TEAMS[team].name + ' is full! Try the other team.');
+        return false;
+      }
+      return tryOccupy(team, key, person).then((ok) => {
+        if (!ok) {
+          toast('This spot is already taken!');
+          return false;
+        }
+        const finish = mine ? release(mine.team, mine.key, person.id) : Promise.resolve();
+        return finish.then(() => {
+          announceJoin(team, key, person);
+          return true;
+        });
+      });
+    });
   }
 
-  function clearSlot(team, key) {
-    delete lineup[team][key];
-    saveLineup();
-    render();
+  function joinSlot(team, key, person) {
+    if (!ensureReady()) return Promise.resolve(false);
+    return tryOccupy(team, key, person).then((ok) => {
+      if (!ok) {
+        toast('This spot is already taken!');
+        return false;
+      }
+      return readLatest().then((data) => {
+        const others = [];
+        ['blue', 'orange'].forEach((t) => {
+          ALL_KEYS.forEach((k) => {
+            const slot = data[t] && data[t][k];
+            if (slot && slot.id === person.id && !(t === team && k === key)) {
+              others.push(release(t, k, person.id));
+            }
+          });
+        });
+        return Promise.all(others).then(() => {
+          announceJoin(team, key, person);
+          return true;
+        });
+      });
+    });
   }
 
-  /* ---------- Rendering ---------- */
+  function leaveSlot(team, key, person) {
+    if (!ensureReady()) return Promise.resolve(false);
+    return readLatest().then((data) => {
+      const slot = data[team] && data[team][key];
+      if (!slot || !slot.id) {
+        toast('This spot is already empty.');
+        return false;
+      }
+      if (slot.id !== person.id) {
+        toast('You can only leave your own spot.');
+        return false;
+      }
+      return release(team, key, person.id).then(() => {
+        toast('You left the match.');
+        return true;
+      });
+    });
+  }
+
+  function leaveMatch(person) {
+    if (!ensureReady()) return Promise.resolve(false);
+    return readLatest().then((data) => {
+      const mine = findPlacement(data, person.id);
+      if (!mine) {
+        toast('You are not in this match yet.');
+        return false;
+      }
+      return release(mine.team, mine.key, person.id).then(() => {
+        toast('You left the match.');
+        return true;
+      });
+    });
+  }
+
+  /* ============================================================
+     Rendering — pitch & bench
+     ============================================================ */
   function render() {
     renderPitch();
     renderBench();
     renderJoinPanel();
+    updateConn();
   }
 
-  /* ---------- Join panel ---------- */
+  function isActivePlayer(id) {
+    const active = me();
+    return !!(active && active.id === id);
+  }
+
+  function renderPitch() {
+    dom.pitchSlots.innerHTML = '';
+    ['orange', 'blue'].forEach((team) => {
+      FIELD_SLOTS.forEach((def) => {
+        dom.pitchSlots.appendChild(buildFieldSlot(team, def));
+      });
+    });
+  }
+
+  function buildFieldSlot(team, def) {
+    const slot = lineupData[team] && lineupData[team][def.key];
+    const y = team === 'blue' ? def.y : 100 - def.y;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className =
+      'slot t-' + team +
+      (slot ? ' slot--filled' : ' slot--empty') +
+      (slot && isActivePlayer(slot.id) ? ' slot--you' : '');
+    btn.style.left = def.x + '%';
+    btn.style.top = y + '%';
+    btn.setAttribute(
+      'aria-label',
+      TEAMS[team].name + ' ' + def.label + (slot ? ': ' + slot.name : ' (empty)')
+    );
+
+    if (slot) {
+      btn.innerHTML =
+        '<span class="slot__ring">' +
+        renderAvatarSVG(getAvatar(slot.avatarId), 'slot-' + team + '-' + def.key) +
+        '</span>' +
+        '<span class="slot__label">' + escapeHtml(slot.name) + '</span>';
+    } else {
+      btn.innerHTML =
+        '<span class="slot__ring"><span class="plus">+</span></span>' +
+        '<span class="slot__label">' + def.label + '</span>';
+    }
+
+    btn.addEventListener('click', () => openSlotSheet(team, def.key));
+    return btn;
+  }
+
+  function renderBench() {
+    dom.bench.innerHTML = '';
+    ['blue', 'orange'].forEach((team) => {
+      const col = document.createElement('div');
+      col.className = 'bench__col t-' + team;
+
+      const head = document.createElement('div');
+      head.className = 'bench__head';
+      head.innerHTML = '<i></i>' + TEAMS[team].name + ' subs';
+      col.appendChild(head);
+
+      const slots = document.createElement('div');
+      slots.className = 'bench__slots';
+
+      BENCH_SLOTS.forEach((def) => {
+        const slot = lineupData[team] && lineupData[team][def.key];
+
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className =
+          'bench-slot t-' + team +
+          (slot ? ' bench-slot--filled' : ' bench-slot--empty') +
+          (slot && isActivePlayer(slot.id) ? ' bench-slot--you' : '');
+        b.setAttribute(
+          'aria-label',
+          TEAMS[team].name + ' ' + def.label + (slot ? ': ' + slot.name : ' (empty)')
+        );
+
+        if (slot) {
+          b.innerHTML =
+            '<span class="bench-slot__ring">' +
+            renderAvatarSVG(getAvatar(slot.avatarId), 'bench-' + team + '-' + def.key) +
+            '</span>' +
+            '<span class="bench-slot__name">' + escapeHtml(slot.name) + '</span>';
+        } else {
+          b.innerHTML =
+            '<span class="bench-slot__ring"><span class="plus">+</span></span>' +
+            '<span class="bench-slot__name">' + def.label + '</span>';
+        }
+
+        b.addEventListener('click', () => openSlotSheet(team, def.key));
+        slots.appendChild(b);
+      });
+
+      col.appendChild(slots);
+      dom.bench.appendChild(col);
+    });
+  }
+
+  /* ============================================================
+     Join panel
+     ============================================================ */
   function renderJoinPanel() {
     if (!dom.joinPanel) return;
     dom.joinPanel.innerHTML = '';
 
-    const user = typeof getActiveUser === 'function' ? getActiveUser() : null;
-    if (!user) return;
+    const person = me();
+    if (!person) return;
 
-    const placement = placementOf(user.id);
+    if (!db) {
+      const off = document.createElement('div');
+      off.className = 'join-cta is-offline';
+      off.innerHTML =
+        '<div class="join-cta__text">' +
+        '<strong>You are offline</strong>' +
+        '<span>Connect to the internet to see the live lineup and claim a spot.</span>' +
+        '</div>';
+      dom.joinPanel.appendChild(off);
+      return;
+    }
+
+    const placement = findPlacement(lineupData, person.id);
 
     if (!placement) {
       const cta = document.createElement('div');
@@ -246,33 +435,55 @@
       '<span class="join-status__dot"></span>' +
       '<div class="join-status__info">' +
       '<strong>You are on ' + TEAMS[placement.team].name + '</strong>' +
-      '<span>Position: ' + SLOT_LABELS[placement.key] + '</span>' +
+      '<span>Position: ' + NAMES[placement.key] + '</span>' +
       '</div>';
 
     const leave = document.createElement('button');
     leave.type = 'button';
     leave.className = 'btn btn--danger join-status__btn';
     leave.textContent = 'Leave';
-    leave.addEventListener('click', () => leaveMatch(user.id));
+    leave.addEventListener('click', () => leaveMatch(person));
     card.appendChild(leave);
     dom.joinPanel.appendChild(card);
   }
 
-  /* ---------- Team choice sheet ---------- */
-  function openTeamChoice() {
-    const user = typeof getActiveUser === 'function' ? getActiveUser() : null;
-    if (!user) return;
+  /* ============================================================
+     Bottom sheet — team choice
+     ============================================================ */
+  function openSheet(mode) {
+    sheetMode = mode;
+    dom.sheet.classList.add('is-open');
+  }
 
-    current = null;
+  function closeSheet() {
+    dom.sheet.classList.remove('is-open');
+    sheetMode = null;
+    currentSlot = null;
+  }
+
+  function openTeamChoice() {
+    const person = me();
+    if (!person) return;
+
     dom.sheetEyebrow.textContent = 'Join match';
     dom.sheetTitle.textContent = 'Choose your team';
-    dom.sheetBody.innerHTML = '';
+    dom.sheetBody.innerHTML = '<p class="sheet-empty">Loading the current lineup…</p>';
+    dom.sheetFoot.innerHTML = '';
+    openSheet('team');
 
+    readLatest().then((data) => {
+      if (sheetMode !== 'team') return; // closed while loading
+      renderTeamChoice(data, person);
+    });
+  }
+
+  function renderTeamChoice(data, person) {
+    dom.sheetBody.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'team-choice';
 
     ['blue', 'orange'].forEach((team) => {
-      const full = isTeamFull(team);
+      const full = isFull(data, team);
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'team-choice__btn t-' + team + (full ? ' is-full' : '');
@@ -280,232 +491,192 @@
       b.innerHTML =
         '<span class="team-choice__name">' + TEAMS[team].name + '</span>' +
         '<span class="team-choice__meta">' +
-        fieldCount(team) + '/' + MAX_FIELD + ' on field · ' +
-        benchCount(team) + '/' + MAX_BENCH + ' subs' +
+        fieldCount(data, team) + '/' + MAX_FIELD + ' on field · ' +
+        benchCount(data, team) + '/' + MAX_BENCH + ' subs' +
         '</span>' +
         '<span class="team-choice__badge">' + (full ? 'Team is full' : 'Join') + '</span>';
 
       b.addEventListener('click', () => {
-        const ok = joinTeam(team, user.id);
-        if (ok) closeSheet();
+        joinTeam(team, person).then((ok) => {
+          if (ok) closeSheet();
+        });
       });
       wrap.appendChild(b);
     });
 
     dom.sheetBody.appendChild(wrap);
-    dom.sheetFoot.innerHTML = '';
-    dom.sheet.classList.add('is-open');
   }
 
-  function renderPitch() {
-    dom.pitchSlots.innerHTML = '';
-    const order = ['orange', 'blue'];
-    order.forEach((team) => {
-      FIELD_SLOTS.forEach((def) => {
-        dom.pitchSlots.appendChild(buildFieldSlot(team, def));
-      });
+  /* ============================================================
+     Bottom sheet — single slot
+     ============================================================ */
+  function openSlotSheet(team, key) {
+    currentSlot = { team: team, key: key };
+    dom.sheetEyebrow.textContent = TEAMS[team].name + ' · ' + LABELS[key];
+    dom.sheetTitle.textContent = NAMES[key];
+    dom.sheetBody.innerHTML = '<p class="sheet-empty">Checking this spot…</p>';
+    dom.sheetFoot.innerHTML = '';
+    openSheet('slot');
+
+    readLatest().then((data) => {
+      if (sheetMode !== 'slot' || !currentSlot) return;
+      if (currentSlot.team !== team || currentSlot.key !== key) return;
+      renderSlotSheet(data, team, key);
     });
   }
 
-  function buildFieldSlot(team, def) {
-    const userId = lineup[team][def.key];
-    const user = userId ? getUser(userId) : null;
-    const y = team === 'blue' ? def.y : 100 - def.y;
+  function renderSlotSheet(data, team, key) {
+    const slot = data[team] && data[team][key];
+    const person = me();
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className =
-      'slot t-' + team +
-      (user ? ' slot--filled' : ' slot--empty') +
-      (user && isActiveUser(user.id) ? ' slot--you' : '');
-    btn.style.left = def.x + '%';
-    btn.style.top = y + '%';
-    btn.setAttribute(
-      'aria-label',
-      TEAMS[team].name + ' ' + def.label + (user ? ': ' + user.name : ' (empty)')
-    );
-
-    if (user) {
-      btn.innerHTML =
-        '<span class="slot__ring">' +
-        renderAvatarSVG(getAvatar(user.avatarId), 'slot-' + team + '-' + def.key) +
-        '</span>' +
-        '<span class="slot__label">' + escapeHtml(user.name) + '</span>';
-    } else {
-      btn.innerHTML =
-        '<span class="slot__ring"><span class="plus">+</span></span>' +
-        '<span class="slot__label">' + def.label + '</span>';
-    }
-
-    btn.addEventListener('click', () => openPicker(team, def.key, def.label, false, user));
-    return btn;
-  }
-
-  function renderBench() {
-    dom.bench.innerHTML = '';
-    ['blue', 'orange'].forEach((team) => {
-      const col = document.createElement('div');
-      col.className = 'bench__col t-' + team;
-
-      const head = document.createElement('div');
-      head.className = 'bench__head';
-      head.innerHTML = '<i></i>' + TEAMS[team].name + ' subs';
-      col.appendChild(head);
-
-      const slots = document.createElement('div');
-      slots.className = 'bench__slots';
-
-      BENCH_SLOTS.forEach((def) => {
-        const userId = lineup[team][def.key];
-        const user = userId ? getUser(userId) : null;
-
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className =
-          'bench-slot t-' + team +
-          (user ? ' bench-slot--filled' : ' bench-slot--empty') +
-          (user && isActiveUser(user.id) ? ' bench-slot--you' : '');
-        b.setAttribute(
-          'aria-label',
-          TEAMS[team].name + ' ' + def.label + (user ? ': ' + user.name : ' (empty)')
-        );
-
-        if (user) {
-          b.innerHTML =
-            '<span class="bench-slot__ring">' +
-            renderAvatarSVG(getAvatar(user.avatarId), 'bench-' + team + '-' + def.key) +
-            '</span>' +
-            '<span class="bench-slot__name">' + escapeHtml(user.name) + '</span>';
-        } else {
-          b.innerHTML =
-            '<span class="bench-slot__ring"><span class="plus">+</span></span>' +
-            '<span class="bench-slot__name">' + def.label + '</span>';
-        }
-
-        b.addEventListener('click', () => openPicker(team, def.key, def.label, true, user));
-        slots.appendChild(b);
-      });
-
-      col.appendChild(slots);
-      dom.bench.appendChild(col);
-    });
-  }
-
-  /* ---------- Player picker (bottom sheet) ---------- */
-  function openPicker(team, key, label, isBench, user) {
-    current = { team: team, key: key };
-    dom.sheetEyebrow.textContent = TEAMS[team].name + ' · ' + (isBench ? 'Substitute' : label);
-    dom.sheetTitle.textContent = isBench ? 'Choose a substitute' : 'Choose ' + label;
-
-    renderPickerBody(user);
-
+    dom.sheetBody.innerHTML = '';
     dom.sheetFoot.innerHTML = '';
 
-    const active = typeof getActiveUser === 'function' ? getActiveUser() : null;
-    const isActiveHere = active && user && user.id === active.id;
-    if (active && !isActiveHere) {
+    if (!slot) {
+      const note = document.createElement('p');
+      note.className = 'slot-note slot-note--open';
+      note.textContent = 'This spot is open. Claim it and it is yours.';
+      dom.sheetBody.appendChild(note);
+
+      if (!person) {
+        const hint = document.createElement('p');
+        hint.className = 'sheet-empty';
+        hint.textContent = 'Create your player profile first to claim a spot.';
+        dom.sheetBody.appendChild(hint);
+        return;
+      }
+
       const join = document.createElement('button');
       join.type = 'button';
       join.className = 'btn btn--primary';
       join.innerHTML =
         '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>' +
-        'Join as ' + escapeHtml(active.name);
+        'Join this spot';
       join.addEventListener('click', () => {
-        assign(team, key, active.id);
-        closeSheet();
-        toast('You joined ' + TEAMS[team].name + ' as ' + SLOT_LABELS[key] + '!');
+        joinSlot(team, key, person).then((ok) => { if (ok) closeSheet(); });
       });
       dom.sheetFoot.appendChild(join);
-    }
-
-    if (user) {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'btn btn--danger';
-      remove.textContent = 'Remove from slot';
-      remove.addEventListener('click', () => {
-        clearSlot(team, key);
-        closeSheet();
-        toast('Slot cleared.');
-      });
-      dom.sheetFoot.appendChild(remove);
-    }
-
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'btn btn--ghost';
-    add.innerHTML =
-      '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add new player';
-    add.addEventListener('click', () => {
-      pendingAssign = { team: team, key: key };
-      closeSheet();
-      openCreate();
-    });
-    dom.sheetFoot.appendChild(add);
-
-    dom.sheet.classList.add('is-open');
-  }
-
-  function renderPickerBody(slotUser) {
-    dom.sheetBody.innerHTML = '';
-
-    if (state.users.length === 0) {
-      dom.sheetBody.innerHTML =
-        '<p class="sheet-empty">No players yet. Create your first player to build the lineup.</p>';
       return;
     }
 
-    state.users.forEach((u) => {
-      const placement = placementOf(u.id);
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'player-row';
+    const mine = person && slot.id === person.id;
 
-      let tag = '';
-      if (placement) {
-        const isHere = slotUser && slotUser.id === u.id;
-        tag =
-          '<span class="player-row__tag player-row__tag--' + placement.team + '">' +
-          (isHere ? 'Here' : TEAMS[placement.team].name.replace(' Team', '')) +
-          '</span>';
-      }
+    const card = document.createElement('div');
+    card.className = 'slot-player t-' + team;
+    card.innerHTML =
+      renderAvatarSVG(getAvatar(slot.avatarId), 'sheet-' + team + '-' + key) +
+      '<div class="slot-player__info">' +
+      '<span class="slot-player__name">' + escapeHtml(slot.name) + '</span>' +
+      '<span class="slot-player__meta">' +
+      (mine ? 'That is you on ' + TEAMS[team].name : 'Occupied by another player') +
+      '</span>' +
+      '</div>';
+    dom.sheetBody.appendChild(card);
 
-      row.innerHTML =
-        renderAvatarSVG(getAvatar(u.avatarId), 'pick-' + u.id) +
-        '<span class="player-row__name">' + escapeHtml(u.name) + '</span>' +
-        tag;
+    if (mine) {
+      const note = document.createElement('p');
+      note.className = 'slot-note slot-note--you';
+      note.textContent = 'This is your spot. You can leave it whenever you want.';
+      dom.sheetBody.appendChild(note);
 
-      row.addEventListener('click', () => {
-        if (!current) return;
-        const target = current;
-        assign(target.team, target.key, u.id);
-        closeSheet();
-        toast(u.name + ' added to ' + TEAMS[target.team].name + '.');
+      const leave = document.createElement('button');
+      leave.type = 'button';
+      leave.className = 'btn btn--danger';
+      leave.textContent = 'Leave this spot';
+      leave.addEventListener('click', () => {
+        leaveSlot(team, key, person).then((ok) => { if (ok) closeSheet(); });
       });
-      dom.sheetBody.appendChild(row);
+      dom.sheetFoot.appendChild(leave);
+    } else {
+      const note = document.createElement('p');
+      note.className = 'slot-note slot-note--warn';
+      note.textContent = 'This spot is already taken!';
+      dom.sheetBody.appendChild(note);
+    }
+  }
+
+  /* ============================================================
+     Share Lineup (WhatsApp)
+     ============================================================ */
+  function buildShareText(data) {
+    const lines = ['⚽ *9v9 Match Lineup* ⚽', ''];
+
+    ['blue', 'orange'].forEach((team) => {
+      const total = fieldCount(data, team) + benchCount(data, team);
+      lines.push(TEAMS[team].emoji + ' *' + TEAMS[team].name + ' (' + total + '/' + MAX_TOTAL + '):*');
+
+      let hasField = false;
+      FIELD_SLOTS.forEach((def) => {
+        const slot = data[team] && data[team][def.key];
+        if (slot) {
+          hasField = true;
+          lines.push('• ' + slot.name + ' (' + def.label + ')');
+        }
+      });
+      if (!hasField) lines.push('_No players yet_');
+
+      const subs = BENCH_SLOTS
+        .map((def) => data[team] && data[team][def.key])
+        .filter(Boolean)
+        .map((slot) => slot.name);
+      if (subs.length) lines.push('_Subs: ' + subs.join(', ') + '_');
+
+      lines.push('');
+    });
+
+    lines.push('🔗 *Join the match here:* ' + APP_URL);
+    return lines.join('\n');
+  }
+
+  function shareLineup() {
+    const source = db ? readLatest() : Promise.resolve(normalize(lineupData));
+    source.then((data) => {
+      const text = buildShareText(data);
+      const url = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
+      window.open(url, '_blank', 'noopener');
     });
   }
 
-  function closeSheet() {
-    dom.sheet.classList.remove('is-open');
-    current = null;
+  /* ============================================================
+     Live sync
+     ============================================================ */
+  function updateConn() {
+    if (!dom.connPill) return;
+    dom.connPill.classList.toggle('is-live', connected);
+    if (dom.connText) dom.connText.textContent = connected ? 'Live' : 'Offline';
   }
 
-  /* ---------- Integration with profile creation ---------- */
-  function handleNewPlayer(userId) {
-    if (!pendingAssign) return false;
-    const target = pendingAssign;
-    pendingAssign = null;
-    assign(target.team, target.key, userId);
-    return true;
+  function startSync() {
+    if (!db) {
+      connected = false;
+      updateConn();
+      render();
+      return;
+    }
+
+    db.ref(PATH).on(
+      'value',
+      (snap) => {
+        lineupData = normalize(snap.val());
+        render();
+      },
+      (err) => {
+        console.error('[SquadUp] Lineup sync error:', err);
+        toast('Could not load the live lineup.');
+      }
+    );
+
+    db.ref('.info/connected').on('value', (snap) => {
+      connected = !!snap.val();
+      updateConn();
+    });
   }
 
-  function cancelPending() {
-    pendingAssign = null;
-  }
-
-  /* ---------- Events ---------- */
-  dom.sheetClose.addEventListener('click', closeSheet);
+  /* ============================================================
+     Events
+     ============================================================ */
+  if (dom.shareBtn) dom.shareBtn.addEventListener('click', shareLineup);
+  if (dom.sheetClose) dom.sheetClose.addEventListener('click', closeSheet);
   dom.sheet.querySelectorAll('[data-sheet-close]').forEach((node) => {
     node.addEventListener('click', closeSheet);
   });
@@ -513,13 +684,17 @@
     if (e.key === 'Escape' && dom.sheet.classList.contains('is-open')) closeSheet();
   });
 
-  /* ---------- Public API ---------- */
+  /* ============================================================
+     Public API + boot
+     ============================================================ */
   window.Lineup = {
     render: render,
-    handleNewPlayer: handleNewPlayer,
-    cancelPending: cancelPending
+    buildShareText: buildShareText,
+    joinSlot: joinSlot,
+    joinTeam: joinTeam,
+    leaveSlot: leaveSlot,
+    leaveMatch: leaveMatch
   };
 
-  loadLineup();
-  render();
+  startSync();
 })();

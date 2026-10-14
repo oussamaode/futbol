@@ -1,91 +1,83 @@
 /* ============================================================
-   SquadUp — app logic + localStorage persistence
+   SquadUp — app shell & personal identity
+   Each device stores ONLY its own Player ID (+ display fields)
+   in localStorage. The match lineup itself lives in Firebase.
    ============================================================ */
 
-const STORAGE_KEYS = {
-  users: 'squadup.users',
-  activeUser: 'squadup.activeUser'
-};
+const PLAYER_KEY = 'squadup.player';
 
-const state = {
-  users: [],
-  activeUserId: null,
-  draft: {
-    name: '',
-    avatarId: AVATARS[0].id
-  }
+/* Legacy keys from earlier versions — cleared on boot. */
+const LEGACY_KEYS = ['squadup.users', 'squadup.activeUser', 'squadup.lineup'];
+
+let player = null; // { id, name, avatarId, createdAt }
+
+const draft = {
+  avatarId: AVATARS[0].id
 };
 
 /* ---------- DOM ---------- */
 const el = {
   screens: {
     create: document.getElementById('screen-create'),
-    select: document.getElementById('screen-select'),
     home: document.getElementById('screen-home')
   },
   createBack: document.getElementById('create-back'),
   createPreview: document.getElementById('create-preview'),
   createPreviewName: document.getElementById('create-preview-name'),
   createSubmit: document.getElementById('create-submit'),
-  createToSelect: document.getElementById('create-to-select'),
   nameField: document.getElementById('name-field'),
   nameInput: document.getElementById('name-input'),
   nameError: document.getElementById('name-error'),
   avatarGrid: document.getElementById('avatar-grid'),
-  selectBack: document.getElementById('select-back'),
-  selectAdd: document.getElementById('select-add'),
-  userList: document.getElementById('user-list'),
   homeAvatar: document.getElementById('home-avatar'),
   homeName: document.getElementById('home-name'),
   homeSince: document.getElementById('home-since'),
   homeSwitch: document.getElementById('home-switch'),
-  homeSignout: document.getElementById('home-signout'),
   toast: document.getElementById('toast')
 };
 
 /* ============================================================
-   Persistence
+   Persistence (device identity only)
    ============================================================ */
-function loadState() {
+function loadPlayer() {
   try {
-    const rawUsers = localStorage.getItem(STORAGE_KEYS.users);
-    const parsed = rawUsers ? JSON.parse(rawUsers) : [];
-    state.users = Array.isArray(parsed) ? parsed : [];
+    const raw = localStorage.getItem(PLAYER_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && parsed.id && parsed.name) {
+      player = {
+        id: String(parsed.id),
+        name: String(parsed.name),
+        avatarId: parsed.avatarId || AVATARS[0].id,
+        createdAt: parsed.createdAt || new Date().toISOString()
+      };
+    } else {
+      player = null;
+    }
   } catch (err) {
-    state.users = [];
-  }
-
-  const active = localStorage.getItem(STORAGE_KEYS.activeUser);
-  const exists = active && state.users.some((u) => u.id === active);
-  state.activeUserId = exists ? active : null;
-
-  if (!exists && active) {
-    localStorage.removeItem(STORAGE_KEYS.activeUser);
+    player = null;
   }
 }
 
-function saveUsers() {
-  localStorage.setItem(STORAGE_KEYS.users, JSON.stringify(state.users));
+function savePlayer(next) {
+  player = next;
+  localStorage.setItem(PLAYER_KEY, JSON.stringify(next));
 }
 
-function saveActiveUser(id) {
-  if (id) {
-    localStorage.setItem(STORAGE_KEYS.activeUser, id);
-  } else {
-    localStorage.removeItem(STORAGE_KEYS.activeUser);
-  }
-  state.activeUserId = id;
+function clearPlayer() {
+  player = null;
+  localStorage.removeItem(PLAYER_KEY);
 }
 
-function getActiveUser() {
-  return state.users.find((u) => u.id === state.activeUserId) || null;
+function getActivePlayer() {
+  return player;
 }
 
-function uid() {
+function makePlayerId() {
   if (window.crypto && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  // Fallback: Firebase-style-ish random id
+  return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
 }
 
 /* ============================================================
@@ -97,12 +89,18 @@ function formatDate(iso) {
   return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 let toastTimer = null;
 function toast(message) {
   el.toast.textContent = message;
   el.toast.classList.add('is-visible');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.toast.classList.remove('is-visible'), 2200);
+  toastTimer = setTimeout(() => el.toast.classList.remove('is-visible'), 2400);
 }
 
 /* ============================================================
@@ -113,12 +111,6 @@ function showScreen(name) {
     node.classList.toggle('is-active', key === name);
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function resolveStartScreen() {
-  if (getActiveUser()) return 'home';
-  if (state.users.length > 0) return 'select';
-  return 'create';
 }
 
 /* ============================================================
@@ -133,8 +125,8 @@ function renderAvatarGrid() {
     btn.dataset.id = avatar.id;
     btn.setAttribute('role', 'radio');
     btn.setAttribute('aria-label', avatar.label);
-    btn.setAttribute('aria-checked', String(avatar.id === state.draft.avatarId));
-    btn.classList.toggle('is-selected', avatar.id === state.draft.avatarId);
+    btn.setAttribute('aria-checked', String(avatar.id === draft.avatarId));
+    btn.classList.toggle('is-selected', avatar.id === draft.avatarId);
     btn.innerHTML = renderAvatarSVG(avatar, 'grid-' + avatar.id);
     btn.addEventListener('click', () => selectAvatar(avatar.id));
     el.avatarGrid.appendChild(btn);
@@ -142,89 +134,42 @@ function renderAvatarGrid() {
 }
 
 function selectAvatar(id) {
-  state.draft.avatarId = id;
-  const avatar = getAvatar(id);
+  draft.avatarId = id;
   el.avatarGrid.querySelectorAll('.avatar-option').forEach((btn) => {
     const selected = btn.dataset.id === id;
     btn.classList.toggle('is-selected', selected);
     btn.setAttribute('aria-checked', String(selected));
   });
-  el.createPreview.innerHTML = renderAvatarSVG(avatar, 'preview');
-  el.createPreviewName.textContent = avatar.label;
+  renderPreview();
 }
 
 function renderPreview() {
-  const avatar = getAvatar(state.draft.avatarId);
+  const avatar = getAvatar(draft.avatarId);
   el.createPreview.innerHTML = renderAvatarSVG(avatar, 'preview');
   el.createPreviewName.textContent = avatar.label;
 }
 
-function renderUserList() {
-  el.userList.innerHTML = '';
-  state.users.forEach((user) => {
-    const avatar = getAvatar(user.avatarId);
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'user-card' + (user.id === state.activeUserId ? ' user-card--active' : '');
-    card.setAttribute('role', 'listitem');
-    card.innerHTML =
-      renderAvatarSVG(avatar, 'list-' + user.id) +
-      '<span class="user-card__info">' +
-      `<span class="user-card__name">${escapeHtml(user.name)}</span>` +
-      `<span class="user-card__meta">Player since ${formatDate(user.createdAt)}</span>` +
-      '</span>' +
-      '<span class="user-card__chev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>';
-    card.addEventListener('click', () => loginUser(user.id));
-    el.userList.appendChild(card);
-  });
-}
-
 function renderHome() {
-  const user = getActiveUser();
-  if (!user) return;
-  const avatar = getAvatar(user.avatarId);
+  if (!player) return;
+  const avatar = getAvatar(player.avatarId);
   el.homeAvatar.innerHTML = renderAvatarSVG(avatar, 'home');
-  el.homeName.textContent = user.name;
-  el.homeSince.textContent = `Playing since ${formatDate(user.createdAt)}`;
+  el.homeName.textContent = player.name;
+  el.homeSince.textContent = `Playing since ${formatDate(player.createdAt)}`;
   if (window.Lineup) window.Lineup.render();
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
 }
 
 /* ============================================================
    Actions
    ============================================================ */
-function loginUser(id) {
-  const user = state.users.find((u) => u.id === id);
-  if (!user) return;
-  saveActiveUser(id);
-  renderHome();
-  showScreen('home');
-  toast(`Welcome, ${user.name}!`);
-}
-
 function openCreate() {
-  state.draft.name = '';
-  state.draft.avatarId = AVATARS[0].id;
+  draft.avatarId = AVATARS[0].id;
   el.nameInput.value = '';
   el.nameField.classList.remove('has-error');
   renderPreview();
   renderAvatarGrid();
-  const hasUsers = state.users.length > 0;
-  el.createBack.hidden = !hasUsers && !getActiveUser();
-  el.createToSelect.hidden = !hasUsers;
+  el.createBack.hidden = !player;
   showScreen('create');
   setTimeout(() => el.nameInput.focus({ preventScroll: true }), 250);
-}
-
-function openSelect() {
-  renderUserList();
-  el.selectBack.hidden = !getActiveUser();
-  showScreen('select');
 }
 
 function createProfile() {
@@ -237,27 +182,22 @@ function createProfile() {
   }
   el.nameField.classList.remove('has-error');
 
-  const duplicate = state.users.find((u) => u.name.toLowerCase() === name.toLowerCase());
-  const user = {
-    id: uid(),
-    name: duplicate ? `${name} ${state.users.length + 1}` : name,
-    avatarId: state.draft.avatarId,
+  savePlayer({
+    id: makePlayerId(),
+    name: name,
+    avatarId: draft.avatarId,
     createdAt: new Date().toISOString()
-  };
+  });
 
-  state.users.push(user);
-  saveUsers();
-  saveActiveUser(user.id);
-  if (window.Lineup) window.Lineup.handleNewPlayer(user.id);
   renderHome();
   showScreen('home');
-  toast(`Profile created for ${user.name}!`);
+  toast(`Welcome, ${player.name}!`);
 }
 
-function signOut() {
-  saveActiveUser(null);
-  showScreen(state.users.length ? 'select' : 'create');
-  toast('Signed out.');
+function switchPlayer() {
+  clearPlayer();
+  if (window.Lineup) window.Lineup.render();
+  openCreate();
 }
 
 /* ============================================================
@@ -272,39 +212,27 @@ el.nameInput.addEventListener('input', () => {
 el.nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') createProfile();
 });
-el.createToSelect.addEventListener('click', openSelect);
-el.selectAdd.addEventListener('click', openCreate);
-el.homeSwitch.addEventListener('click', openSelect);
-el.homeSignout.addEventListener('click', signOut);
-
+el.homeSwitch.addEventListener('click', switchPlayer);
 el.createBack.addEventListener('click', () => {
-  if (window.Lineup) window.Lineup.cancelPending();
-  showScreen(getActiveUser() ? 'home' : 'select');
-});
-el.selectBack.addEventListener('click', () => {
-  if (getActiveUser()) showScreen('home');
+  if (player) showScreen('home');
 });
 
 /* ============================================================
    Boot
    ============================================================ */
 function init() {
-  loadState();
+  LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+  loadPlayer();
   renderPreview();
   renderAvatarGrid();
-  renderUserList();
 
-  const start = resolveStartScreen();
-  if (start === 'create') {
-    const hasUsers = state.users.length > 0;
-    el.createBack.hidden = !getActiveUser();
-    el.createToSelect.hidden = !hasUsers;
-  } else if (start === 'home') {
+  if (player) {
     renderHome();
+    showScreen('home');
   } else {
-    el.selectBack.hidden = !getActiveUser();
+    el.createBack.hidden = true;
+    showScreen('create');
   }
-  showScreen(start);
 }
 
 init();

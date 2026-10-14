@@ -635,6 +635,41 @@ body {
   box-shadow: 0 0 10px #ff9533;
 }
 
+.conn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 999px;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.conn-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.conn-pill.is-live {
+  color: #3ddc97;
+  border-color: rgba(61, 220, 151, 0.3);
+  background: rgba(61, 220, 151, 0.1);
+}
+
+.conn-pill.is-live i {
+  background: #3ddc97;
+  box-shadow: 0 0 8px #3ddc97;
+}
+
 /* ---------- Pitch ---------- */
 .pitch {
   --slot: clamp(40px, 13.5%, 52px);
@@ -942,11 +977,22 @@ body {
   color: var(--muted);
 }
 
-.join-status__btn {
-  width: auto;
-  margin-left: auto;
-  padding: 10px 16px;
-  flex: 0 0 auto;
+.join-cta.is-offline {
+  background: linear-gradient(135deg, rgba(255, 92, 122, 0.12), rgba(255, 255, 255, 0.02));
+  border-color: rgba(255, 92, 122, 0.3);
+}
+
+.btn--share {
+  width: 100%;
+  margin-top: 4px;
+  background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+  color: #04140c;
+  box-shadow: 0 16px 32px -16px rgba(37, 211, 102, 0.85);
+}
+
+.btn--share svg {
+  fill: currentColor;
+  stroke: none;
 }
 
 /* ---------- Team choice ---------- */
@@ -1032,6 +1078,75 @@ body {
   color: var(--danger);
   border-color: rgba(255, 92, 122, 0.4);
   background: rgba(255, 92, 122, 0.12);
+}
+
+.slot-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.slot-player .avatar-svg {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  flex: 0 0 auto;
+}
+
+.slot-player__info {
+  min-width: 0;
+}
+
+.slot-player__name {
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-player__meta {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.slot-note--open {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(61, 220, 151, 0.12), rgba(255, 255, 255, 0.02));
+  border-color: rgba(61, 220, 151, 0.3);
+}
+
+.slot-note--warn {
+  color: #ffc78f;
+  background: rgba(255, 149, 51, 0.12);
+  border-color: rgba(255, 149, 51, 0.3);
+}
+
+.slot-note--you {
+  color: var(--accent);
+  background: rgba(61, 220, 151, 0.1);
+  border-color: rgba(61, 220, 151, 0.25);
 }
 
 /* ---------- Bottom sheet ---------- */
