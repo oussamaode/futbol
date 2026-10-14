@@ -5,74 +5,74 @@
  */
 const AVATARS = [
   {
-    id: 'blaze',
-    label: 'Blaze',
-    from: '#ff512f',
-    to: '#f09819',
-    icon: '<path d="M50 14c1 14 18 22 18 40a18 18 0 0 1-36 0c0-7 3-13 8-19 0 6 2 10 5 12 -3-12-1-25 5-33z"/>'
+    id: 'neo',
+    label: 'Neo',
+    from: '#1f6cff',
+    to: '#0b3cff',
+    icon: '<circle cx="50" cy="36" r="16"/><rect x="26" y="58" width="48" height="24" rx="12"/>'
   },
   {
-    id: 'volt',
-    label: 'Volt',
-    from: '#f9d423',
-    to: '#ff4e50',
-    icon: '<path d="M57 10 28 54h15l-6 36 31-46H51l6-34z"/>'
+    id: 'pulse',
+    label: 'Pulse',
+    from: '#ff6b1c',
+    to: '#ff3c00',
+    icon: '<path d="M26 54h10l8-22 14 38 8-16h8"/><circle cx="50" cy="50" r="6" fill="none" stroke="#fff" stroke-width="6"/>'
   },
   {
-    id: 'sprout',
-    label: 'Sprout',
-    from: '#43e97b',
-    to: '#38f9d7',
-    icon: '<path d="M76 18C42 20 22 40 22 66c0 7 5 12 12 12 26 0 44-22 46-52 0-5-2-8-4-8z"/><path d="M30 70c8-12 20-22 34-28" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="5" stroke-linecap="round"/>'
+    id: 'arc',
+    label: 'Arc',
+    from: '#22d3ee',
+    to: '#0ea5e9',
+    icon: '<path d="M20 66 A30 30 0 0 1 80 66" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/><circle cx="20" cy="66" r="6"/><circle cx="80" cy="66" r="6"/><circle cx="50" cy="36" r="10"/>'
   },
   {
-    id: 'wave',
-    label: 'Wave',
-    from: '#2193b0',
-    to: '#6dd5ed',
-    icon: '<path d="M16 42q9-14 18 0t18 0t18 0t18 0" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/><path d="M16 64q9-14 18 0t18 0t18 0" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="8" stroke-linecap="round"/>'
+    id: 'hex',
+    label: 'Hex',
+    from: '#a855f7',
+    to: '#7c3aed',
+    icon: '<polygon points="50 18 78 33 78 67 50 82 22 67 22 33" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round"/><circle cx="50" cy="50" r="9"/>'
   },
   {
-    id: 'comet',
-    label: 'Comet',
-    from: '#8e2de2',
-    to: '#4a00e0',
-    icon: '<path d="M50 16l9.6 20.9 22.4 2.5-16.6 15.3 4.6 22.1L50 65.7 30 76.8l4.6-22.1L18 39.4l22.4-2.5z"/>'
+    id: 'bolt',
+    label: 'Bolt',
+    from: '#f59e0b',
+    to: '#f43f5e',
+    icon: '<path d="M54 16 28 56h16l-6 28 26-44H48l6-24z"/>'
   },
   {
-    id: 'luna',
-    label: 'Luna',
-    from: '#3a1c71',
-    to: '#4776e6',
-    icon: '<path d="M60 16a36 36 0 1 0 24 62A28 28 0 0 1 60 16Z"/>'
+    id: 'chip',
+    label: 'Chip',
+    from: '#10b981',
+    to: '#22c55e',
+    icon: '<rect x="22" y="28" width="56" height="44" rx="8"/><path d="M34 28v-6h32v6M34 72v6h32v-6"/><circle cx="50" cy="50" r="10"/>'
   },
   {
-    id: 'heart',
-    label: 'Heart',
-    from: '#ff0844',
-    to: '#ffb199',
-    icon: '<path d="M50 80C24 60 16 45 24 33c7-10 20-10 26 0 6-10 19-10 26 0 8 12 0 27-26 47z"/>'
+    id: 'orbit',
+    label: 'Orbit',
+    from: '#38bdf8',
+    to: '#2563eb',
+    icon: '<circle cx="50" cy="50" r="20"/><ellipse cx="50" cy="50" rx="40" ry="14" fill="none" stroke="#fff" stroke-width="6" transform="rotate(-25 50 50)"/><circle cx="90" cy="40" r="6"/>'
   },
   {
-    id: 'sunny',
-    label: 'Sunny',
-    from: '#f7971e',
-    to: '#ffd200',
-    icon: '<circle cx="50" cy="50" r="17"/><g stroke="#fff" stroke-width="6" stroke-linecap="round"><line x1="50" y1="12" x2="50" y2="24"/><line x1="50" y1="76" x2="50" y2="88"/><line x1="12" y1="50" x2="24" y2="50"/><line x1="76" y1="50" x2="88" y2="50"/><line x1="24" y1="24" x2="33" y2="33"/><line x1="67" y1="67" x2="76" y2="76"/><line x1="76" y1="24" x2="67" y2="33"/><line x1="33" y1="67" x2="24" y2="76"/></g>'
+    id: 'vibe',
+    label: 'Vibe',
+    from: '#ec4899',
+    to: '#f97316',
+    icon: '<path d="M26 64 C34 28 66 28 74 64 L74 74 L26 74 Z"/><circle cx="38" cy="48" r="6"/><circle cx="62" cy="48" r="6"/>'
   },
   {
-    id: 'peak',
-    label: 'Peak',
-    from: '#11998e',
-    to: '#38ef7d',
-    icon: '<path d="M10 74l24-40 13 19 9-13 24 34z"/><path d="M34 34l4.5 6.8-3.6 3 3.6 3-4.5 5.2" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
+    id: 'grid',
+    label: 'Grid',
+    from: '#0ea5e9',
+    to: '#22d3ee',
+    icon: '<rect x="22" y="22" width="20" height="20" rx="3"/><rect x="58" y="22" width="20" height="20" rx="3"/><rect x="22" y="58" width="20" height="20" rx="3"/><rect x="58" y="58" width="20" height="20" rx="3"/>'
   },
   {
-    id: 'nova',
-    label: 'Nova',
-    from: '#c471ed',
-    to: '#f64f59',
-    icon: '<circle cx="50" cy="50" r="22"/><ellipse cx="50" cy="50" rx="42" ry="14" fill="none" stroke="#fff" stroke-width="6" transform="rotate(-20 50 50)"/>'
+    id: 'crest',
+    label: 'Crest',
+    from: '#14b8a6',
+    to: '#0ea5e9',
+    icon: '<path d="M50 20 L72 28 L72 46 C72 64 62 78 50 82 C38 78 28 64 28 46 L28 28 Z"/><path d="M40 46 L46 56 L60 38" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'
   }
 ];
 

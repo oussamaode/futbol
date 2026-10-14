@@ -506,17 +506,17 @@ body {
 
 /* ---------- Team tokens ---------- */
 .t-blue {
-  --team-line: #6aa4ff;
-  --team-soft: rgba(79, 140, 255, 0.18);
-  --team-solid: #4f8cff;
-  --team-solid-2: #1d5bff;
+  --team-line: #64a6ff;
+  --team-soft: rgba(74, 126, 255, 0.16);
+  --team-solid: #4e7cff;
+  --team-solid-2: #2f5bff;
 }
 
 .t-orange {
-  --team-line: #ffb066;
-  --team-soft: rgba(255, 149, 51, 0.18);
-  --team-solid: #ffa23a;
-  --team-solid-2: #ff6a00;
+  --team-line: #ffb36a;
+  --team-soft: rgba(255, 118, 26, 0.16);
+  --team-solid: #ff7a1a;
+  --team-solid-2: #ff5c00;
 }
 
 /* ---------- Home: profile bar ---------- */
@@ -744,10 +744,10 @@ body {
   color: var(--team-line);
 }
 
-.slot__ring .plus,
-.bench-slot__ring .plus {
+.slot__plus,
+.bench-slot__plus {
   font-size: 20px;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1;
   color: var(--team-line);
   opacity: 0.95;
@@ -873,6 +873,13 @@ body {
 .bench-slot--empty .bench-slot__ring {
   border: 1.5px dashed var(--team-line);
   background: var(--team-soft);
+}
+
+.bench-slot__plus {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--team-line);
 }
 
 .bench-slot--filled .bench-slot__ring {

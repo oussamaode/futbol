@@ -327,7 +327,7 @@
         '<span class="slot__label">' + escapeHtml(slot.name) + '</span>';
     } else {
       btn.innerHTML =
-        '<span class="slot__ring"><span class="plus">+</span></span>' +
+        '<span class="slot__ring"><span class="slot__plus">+</span></span>' +
         '<span class="slot__label">' + def.label + '</span>';
     }
 
@@ -371,7 +371,7 @@
             '<span class="bench-slot__name">' + escapeHtml(slot.name) + '</span>';
         } else {
           b.innerHTML =
-            '<span class="bench-slot__ring"><span class="plus">+</span></span>' +
+            '<span class="bench-slot__ring"><span class="bench-slot__plus">+</span></span>' +
             '<span class="bench-slot__name">' + def.label + '</span>';
         }
 
