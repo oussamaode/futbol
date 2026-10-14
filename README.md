@@ -10,8 +10,10 @@ SquadUp is a mobile-first web app for managing 9v9 football match lineups in rea
 - **Anti-overwrite & ownership** — Reads latest DB state before assigning. Transactions prevent stealing spots. You can only leave or move your own slot.
 - **Tactical 9v9 field** — Clean, responsive pitch (portrait) with positions GK/LB/CB/RB/LM/CM/RM/ST. Blue vs Orange.
 - **WhatsApp share** — One-tap share generates a clean English summary with positions, subs, and a link to join.
+- **Download lineup image** — One tap captures the live pitch (names + avatars) with html2canvas and downloads it as `match-lineup.png`, ready to drop into the WhatsApp group.
+- **Rich link preview** — Open Graph meta tags render a graphic card with the match title when the Pages link is shared in WhatsApp.
 - **Offline awareness** — Connection pill shows Live/Offline. Joins are disabled while offline.
-- **Avatar selection** — 10 pre-defined gradient SVG avatars.
+- **Avatar selection** — 10 pre-defined gradient SVG avatars whose background tint follows the player's team (Blue / Orange / neutral).
 
 ## Tech stack
 
@@ -42,10 +44,11 @@ Edit `js/firebase-config.js`:
 ```
 index.html
 css/styles.css
+assets/preview.png    # Open Graph link-preview banner (1200x630)
 js/avatars.js        # Avatar SVG library
 js/firebase-config.js # Firebase init + config
 js/app.js            # Personal identity + onboarding
-js/lineup.js         # Real-time lineup logic + sharing
+js/lineup.js         # Real-time lineup logic + sharing + image export
 ```
 
 ## Notes

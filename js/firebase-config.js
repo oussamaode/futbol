@@ -16,9 +16,9 @@
     appId: "1:397264704983:web:6de58bd4e92b339795a792"
   };
 
-  /* Replace with your GitHub Pages URL once deployed.
-     This is only used inside the "Share Lineup" message. */
-  const APP_URL = 'https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO/';
+  /* GitHub Pages URL used inside the "Share Lineup" message.
+     Keep this in sync with the Open Graph tags in index.html. */
+  const APP_URL = 'https://oussamaode.github.io/futbol/';
 
   const LINEUP_PATH = 'matchLineup';
 

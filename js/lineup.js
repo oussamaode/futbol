@@ -61,6 +61,8 @@
     bench: document.getElementById('bench'),
     joinPanel: document.getElementById('join-panel'),
     shareBtn: document.getElementById('share-lineup'),
+    downloadBtn: document.getElementById('download-lineup'),
+    match: document.querySelector('.match'),
     connPill: document.getElementById('conn-status'),
     connText: document.getElementById('conn-text'),
     sheet: document.getElementById('sheet'),
@@ -638,6 +640,53 @@
   }
 
   /* ============================================================
+     Download Lineup Image (html2canvas snapshot)
+     ============================================================ */
+  function downloadLineupImage() {
+    if (typeof window.html2canvas !== 'function') {
+      toast('Image export is unavailable right now.');
+      return;
+    }
+
+    const target = dom.match;
+    if (!target) return;
+
+    const btn = dom.downloadBtn;
+    if (btn) btn.disabled = true;
+    target.classList.add('is-capturing');
+
+    const scale = Math.min(3, Math.max(2, window.devicePixelRatio || 1) * 1.5);
+
+    window.html2canvas(target, {
+      backgroundColor: '#0a0e16',
+      scale: scale,
+      useCORS: true,
+      logging: false
+    })
+      .then((canvas) => new Promise((resolve) => canvas.toBlob(resolve, 'image/png')))
+      .then((blob) => {
+        if (!blob) throw new Error('Empty image');
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'match-lineup.png';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        toast('Lineup image downloaded.');
+      })
+      .catch((err) => {
+        console.error('[SquadUp] Image export error:', err);
+        toast('Could not create the image.');
+      })
+      .then(() => {
+        target.classList.remove('is-capturing');
+        if (btn) btn.disabled = false;
+      });
+  }
+
+  /* ============================================================
      Live sync
      ============================================================ */
   function updateConn() {
@@ -676,6 +725,7 @@
      Events
      ============================================================ */
   if (dom.shareBtn) dom.shareBtn.addEventListener('click', shareLineup);
+  if (dom.downloadBtn) dom.downloadBtn.addEventListener('click', downloadLineupImage);
   if (dom.sheetClose) dom.sheetClose.addEventListener('click', closeSheet);
   dom.sheet.querySelectorAll('[data-sheet-close]').forEach((node) => {
     node.addEventListener('click', closeSheet);
@@ -693,7 +743,8 @@
     joinSlot: joinSlot,
     joinTeam: joinTeam,
     leaveSlot: leaveSlot,
-    leaveMatch: leaveMatch
+    leaveMatch: leaveMatch,
+    downloadImage: downloadLineupImage
   };
 
   startSync();

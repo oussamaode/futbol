@@ -1001,7 +1001,7 @@ body {
 }
 
 .btn--share {
-  width: 100%;
+  flex: 1 1 auto;
   margin-top: 4px;
   background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
   color: #04140c;
@@ -1011,6 +1011,42 @@ body {
 .btn--share svg {
   fill: currentColor;
   stroke: none;
+}
+
+.match__actions {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 4px;
+}
+
+.match__actions .btn {
+  margin-top: 0;
+  padding: 15px 12px;
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.btn--download {
+  flex: 1 1 auto;
+  background: linear-gradient(135deg, rgba(61, 220, 151, 0.16), rgba(34, 163, 255, 0.16));
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.btn--download:hover:not(:disabled) {
+  border-color: rgba(61, 220, 151, 0.5);
+}
+
+.btn--download:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.match.is-capturing .match__actions {
+  visibility: hidden;
 }
 
 /* ---------- Team choice ---------- */
